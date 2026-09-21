@@ -30,6 +30,8 @@ Reference: `auto_encode_fluent.py` and the original encode/mux screenshots suppl
 
 Parameter textareas are 84px for CRF and 88px per pass, including the settings dialog. At shorter supported viewports, each pass uses 80px and layout spacing tightens to preserve visible controls, queues and logs. Parameter text is 2px larger than the standard input text.
 
+Solid pink primary controls use white text and icons in both themes, including checked checkbox indicators. Default interface fonts are local Segoe UI, Microsoft YaHei, then sans-serif; logs default to Consolas, Microsoft YaHei, then monospace. Settings > General can select an installed font for the interface and logs, with those defaults retained as fallbacks. Selection previews one font; Apply/OK persists it, and Cancel/outside/Escape discard unapplied changes. No font files are bundled.
+
 ## Additional regressions corrected during the audit
 
 - Restored default SC/TC filename templates on new profiles.
@@ -64,6 +66,8 @@ The rewrite honors both subtitle default-track controls. The Python TC command c
 - `cargo test --manifest-path src-tauri/Cargo.toml`: wildcard matching, command generation, migration, and streaming output tests.
 - `node tests/native-smoke.mjs`: built EXE, real FFmpeg with generated media, native theme API, automatic saving and episode progression. It requires FFmpeg on PATH and uses a unique `.qa/native-*` directory.
 - `node tests/native-startup.mjs`: built EXE with isolated light/dark settings, saved maximization, idempotent readiness, and second-instance activation. It refuses to run while another FFmuxify instance is open and writes screenshots under `.qa/startup-*`.
+- Font selection uses a cached Windows DirectWrite family list loaded on a blocking worker. The settings popover searches family and localized aliases and virtualizes its rows, so a large installed-font collection does not create thousands of DOM nodes at once.
+- `node tests/native-fonts.mjs`: isolated Windows font enumeration, duplicate filtering, cached reads, selection, persistence across EXE restart, and Chinese alias search. It refuses to run while another FFmuxify instance is open. UI tests separately exercise 20,000 simulated font families.
 - `npm run tauri:build`: release EXE and NSIS package.
 
 Browser preview stores only disposable browser-local data. Native smoke testing sets `FFMUXIFY_CONFIG_DIR` to isolate all application settings/profiles from the user's normal configuration.

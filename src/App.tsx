@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Moon, Sun, Settings as SettingsIcon, Plus, Pencil, Trash2 } from "lucide-react";
 import { Button } from "./components/ui/button";
 import { Segmented } from "./components/fields";
@@ -9,6 +9,7 @@ import { BatchDialog, ConfirmDialog, NameDialog, SettingsDialog, type BatchKind 
 import { EncodeWorkspace, MuxWorkspace } from "./components/workspaces";
 import { EncodeLogPanel, MuxLogPanel, QueuePanel, emptyMetrics } from "./components/panels";
 import { api } from "./api";
+import { fontStack } from "./lib/fonts";
 import { isEncode, newProfile } from "./state";
 import type { AppState, Profile, QueueTask, Settings } from "./types";
 
@@ -65,6 +66,10 @@ export default function App() {
     if (!state) return;
     void api.saveState(state.settings, state.profiles).catch(error => setNotice("自动保存失败：" + String(error)));
   }, [state]);
+  useLayoutEffect(() => {
+    document.documentElement.style.setProperty("--ui-font", fontStack(state?.settings.font_family));
+    document.documentElement.style.setProperty("--log-font", fontStack(state?.settings.font_family, true));
+  }, [state?.settings.font_family]);
   useEffect(() => {
     if (!startupSettled) return;
     let disposed = false;

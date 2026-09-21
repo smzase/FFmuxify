@@ -28,6 +28,7 @@ Maintain FFmuxify as a faithful Tauri rewrite of the legacy PyQt encoder/muxer. 
 10. Queue sorting uses dnd-kit pointer and keyboard sensors, not HTML native drag events. Keep active jobs protected.
 11. FFmpeg status lines update the dashboard and progress bar without being appended to the log.
 12. All editable fields need the shared text-edit context menu, native clipboard support, and working undo. Settings retain a fixed height and do not duplicate the sidebar theme control.
+13. Font selection in General settings must remain searchable and virtualized. Enumerate Windows font families on a background worker, cache the result, and preview only the selected font. Apply/OK persists the choice; cancellation discards the draft.
 
 ## Release
 

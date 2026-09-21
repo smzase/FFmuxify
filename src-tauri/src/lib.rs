@@ -1,4 +1,5 @@
 #![recursion_limit = "256"]
+mod fonts;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use serde_json::{json, Map, Value};
@@ -31,7 +32,7 @@ fn default_profile() -> Value {
       "subset_sub_dir":"","subset_font_dir":"","subset_ep":"01","subset_sub_sc":"<ep>.zh-hans.ass","subset_sub_tc":"<ep>.zh-hant.ass","mux_video_dir":"","mux_video_name":"","mux_subset_dir":"","mux_output_dir":"","mux_output_name":"","mux_ep":"01","mux_sub_sc":"<ep>.zh-hans.ass","mux_sub_sc_name":"简体中文&日语","mux_sub_sc_default":true,"mux_sub_tc":"<ep>.zh-hant.ass","mux_sub_tc_name":"繁體中文&日語","mux_sub_tc_default":false,"mux_suffix":"[V2]"
     })
 }
-fn default_settings() -> Value { json!({"base_path":"","use_sub_folder":true,"folder_name":"ffmpeg smzase","theme_mode":"light","mkvmerge_path":"","assfontsubset_path":"","auto_ep_encode":true,"auto_ep_mux":true,"ep_not_shared":true,"close_behavior":"tray","last_workflow":"encode","default_params_matrix":default_matrix()}) }
+fn default_settings() -> Value { json!({"base_path":"","use_sub_folder":true,"folder_name":"ffmpeg smzase","theme_mode":"light","font_family":"","mkvmerge_path":"","assfontsubset_path":"","auto_ep_encode":true,"auto_ep_mux":true,"ep_not_shared":true,"close_behavior":"tray","last_workflow":"encode","default_params_matrix":default_matrix()}) }
 fn merge_profile_defaults(profile: &mut Value) {
     let defaults = default_profile();
     for suffix in ["with_sub", "no_sub"] {
@@ -469,7 +470,7 @@ pub fn run() {
                 let _ = window.emit("close-requested", json!({"quit":false}));
             }
         })
-        .invoke_handler(tauri::generate_handler![load_state,save_state,pick_folder,pick_file,run_task,stop_task,set_theme,frontend_ready,finish_close])
+        .invoke_handler(tauri::generate_handler![load_state,save_state,pick_folder,pick_file,run_task,stop_task,set_theme,frontend_ready,finish_close,fonts::list_fonts])
         .run(tauri::generate_context!())
         .expect("error while running FFmuxify");
 }

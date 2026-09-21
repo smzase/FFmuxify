@@ -1,16 +1,21 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { defaultSettings, newProfile } from "./state";
-import type { AppState, Profile, Settings } from "./types";
+import type { AppState, Profile, Settings, SystemFont } from "./types";
 
 export const isDesktop = () => "__TAURI_INTERNALS__" in window;
 const previewKey = "ffmuxify-preview";
 let saveTail: Promise<unknown> = Promise.resolve();
+let fontsRequest: Promise<SystemFont[]> | undefined;
+let cachedFonts: SystemFont[] | null = null;
 export const api = {
   loadState: async (): Promise<AppState> => {
     if (isDesktop()) return invoke("load_state");
     const stored = localStorage.getItem(previewKey);
-    if (stored) return JSON.parse(stored) as AppState;
+    if (stored) {
+      const loaded = JSON.parse(stored) as AppState;
+      return { ...loaded, settings: { ...defaultSettings(), ...loaded.settings } };
+    }
     const settings = defaultSettings();
     const query = new URLSearchParams(location.search);
     settings.theme_mode = query.get("theme") === "dark" ? "dark" : "light";
@@ -28,6 +33,16 @@ export const api = {
     return operation;
   },
   flush: () => saveTail,
+  cachedFonts: () => cachedFonts,
+  listFonts: (): Promise<SystemFont[]> => {
+    if (!fontsRequest) {
+      fontsRequest = (isDesktop() ? invoke<SystemFont[]>("list_fonts") : Promise.resolve(
+        ["Arial", "Consolas", "Microsoft YaHei", "Segoe UI"].map(family => ({ family, display_name: family, aliases: [family] }))
+      )).then(fonts => { cachedFonts = fonts; return fonts; })
+        .catch(error => { fontsRequest = undefined; throw error; });
+    }
+    return fontsRequest;
+  },
   setTheme: async (dark: boolean) => { if (isDesktop()) await invoke("set_theme", { dark }); },
   frontendReady: async () => { if (isDesktop()) await invoke("frontend_ready"); },
   finishClose: async (exit: boolean) => { if (isDesktop()) await invoke("finish_close", { exit }); },

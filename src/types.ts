@@ -22,6 +22,7 @@ export interface Profile {
   suffix_enabled_with_sub: boolean; suffix_enabled_no_sub: boolean; suffix_with_sub: string; suffix_no_sub: string;
   [key: string]: unknown;
 }
-export interface Settings { base_path: string; use_sub_folder: boolean; folder_name: string; theme_mode: "light" | "dark"; mkvmerge_path: string; assfontsubset_path: string; auto_ep_encode: boolean; auto_ep_mux: boolean; ep_not_shared: boolean; close_behavior: "tray" | "exit"; last_workflow: "encode" | "mux"; default_params_matrix: ParamMatrix; }
+export interface Settings { base_path: string; use_sub_folder: boolean; folder_name: string; theme_mode: "light" | "dark"; font_family: string; mkvmerge_path: string; assfontsubset_path: string; auto_ep_encode: boolean; auto_ep_mux: boolean; ep_not_shared: boolean; close_behavior: "tray" | "exit"; last_workflow: "encode" | "mux"; default_params_matrix: ParamMatrix; }
+export interface SystemFont { family: string; display_name: string; aliases: string[] }
 export interface AppState { settings: Settings; profiles: Record<string, Profile>; config_dir: string }
 export interface QueueTask { id: string; type: TaskType | "extract" | "subset" | "mux"; ep: string; profileName: string; profile: Profile; suffix?: string; description: string; status: "pending" | "running" | "done" | "error"; progress: number; pass: number; }

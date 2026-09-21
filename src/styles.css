@@ -4,12 +4,12 @@
 
 @layer base {
   :root {
-    font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+    font-family: var(--ui-font, "Segoe UI", "Microsoft YaHei", sans-serif);
     font-size: 14px; font-synthesis: none; color-scheme: light;
     --background: 250 250 250; --foreground: 24 24 27;
     --card: 255 255 255; --card-foreground: 24 24 27;
     --popover: 255 255 255; --popover-foreground: 24 24 27;
-    --primary: 251 114 153; --primary-foreground: 52 19 30;
+    --primary: 251 114 153; --primary-foreground: 255 255 255;
     --secondary: 244 244 245; --secondary-foreground: 24 24 27;
     --muted: 244 244 245; --muted-foreground: 113 113 122;
     --accent: 253 236 241; --accent-foreground: 130 43 70;
@@ -75,7 +75,7 @@ button { cursor: pointer; }
 .params-grid { display: flex; flex-direction: column; gap: 8px; }
 .param-field { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 8px; align-items: start; }
 .param-field .field-label { padding-top: 3px; }
-.params-grid .ui-textarea { height: 84px; font-size: calc(.875rem + 2px); line-height: 1.5; }
+.params-grid .ui-textarea { height: 88px; font-size: calc(.875rem + 2px); line-height: 1.5; }
 .params-grid.two-pass .ui-textarea { height: 88px; }
 .encode-controls { display: flex; align-items: center; gap: 8px; padding: 12px 18px; }
 .episode-field { flex: 0 0 auto; width: 114px; }
@@ -106,7 +106,7 @@ button { cursor: pointer; }
 .metric { text-align: center; min-width: 0; }
 .metric span { display: block; color: rgb(var(--muted-foreground)); font-size: 11px; }
 .metric strong { display: block; margin-top: 3px; font-size: 13px; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
-.log-view { display: block; flex: 1; width: 100%; min-height: 0; padding: 8px; resize: none; border: 1px solid rgb(var(--border)); background: var(--surface); color: var(--text); overflow: auto; font: 12px/1.5 Consolas, "Microsoft YaHei", monospace; }
+.log-view { display: block; flex: 1; width: 100%; min-height: 0; padding: 8px; resize: none; border: 1px solid rgb(var(--border)); background: var(--surface); color: var(--text); overflow: auto; font: 12px/1.5 var(--log-font, Consolas, "Microsoft YaHei", monospace); }
 .encode-log > .log-view { width: calc(100% - 20px); margin: 0 10px 10px; }
 .mux-form { display: flex; flex-direction: column; gap: 6px; padding: 10px 14px; }
 .mux-form .field-row > .field-label { flex-basis: auto; min-width: 52px; }
@@ -170,6 +170,14 @@ button { cursor: pointer; }
 .dialog-content { width: min(460px, calc(100vw - 48px)); max-height: calc(100dvh - 48px); }
 .dialog-content.settings-dialog { width: min(840px, calc(100vw - 48px)); }
 .settings-nav button { justify-content: flex-start; }
+.font-setting { display: flex; flex-direction: column; gap: 8px; }
+.font-preview { border: 1px solid rgb(var(--border)); border-radius: 5px; padding: 8px 12px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.font-popover { width: var(--radix-popover-trigger-width); max-height: var(--radix-popover-content-available-height); display: flex; flex-direction: column; padding: 0; overflow: hidden; }
+.font-search { display: flex; align-items: center; gap: 4px; padding: 4px 10px; border-bottom: 1px solid rgb(var(--border)); flex-shrink: 0; }
+.font-options { height: 238px; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.font-option { position: absolute; left: 4px; right: 4px; display: flex; align-items: center; gap: 8px; border-radius: 4px; padding: 0 8px; font-size: .875rem; cursor: pointer; }
+.font-list-message { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 12px; color: rgb(var(--muted-foreground)); font-size: .875rem; }
+.font-list-footer { border-top: 1px solid rgb(var(--border)); padding: 6px 12px; color: rgb(var(--muted-foreground)); font-size: 11px; flex-shrink: 0; }
 .settings-dialog .dialog-actions { flex-shrink: 0; }
 .profile { transition: background-color 150ms, color 150ms; }
 .workspace, .settings-scroll, .param-field { animation: content-enter 180ms ease-out; }

@@ -42,6 +42,7 @@ FFmuxify is a Windows-first Tauri desktop client for the original `auto_encode_f
 - Use pointer/keyboard sorting for queues; HTML native drag events conflict with the Windows webview's file drop handler. Running tasks cannot be dragged or removed.
 - Editable fields share the custom cut/copy/paste/undo/select-all menu. Preserve browser undo history and controlled React updates; use the native clipboard plugin on desktop.
 - Keep settings at a fixed height across categories; the sidebar is the sole theme control.
+- Settings font selection uses a cached background Windows font enumeration and a searchable virtual list. Render only visible font names and preview only the selected font; preserve Apply/OK/Cancel draft behavior and default font fallbacks.
 - Keep open/close and sorting animations, with reduced-motion support. Notifications must remain outside the app's two-column grid.
 - Read `docs/compatibility-audit.md` for the verified reference layout and behavior.
 

@@ -17,5 +17,5 @@ export function newProfile(defaults = matrix()): Profile {
     mux_sub_tc: "<ep>.zh-hant.ass", mux_sub_tc_name: "繁體中文&日語", mux_sub_tc_default: false, mux_suffix_enabled: false, mux_suffix: "[V2]",
   };
 }
-export const defaultSettings = (): Settings => ({ base_path: "", use_sub_folder: true, folder_name: "ffmpeg smzase", theme_mode: "light", mkvmerge_path: "", assfontsubset_path: "", auto_ep_encode: true, auto_ep_mux: true, ep_not_shared: true, close_behavior: "tray", last_workflow: "encode", default_params_matrix: matrix() });
+export const defaultSettings = (): Settings => ({ base_path: "", use_sub_folder: true, folder_name: "ffmpeg smzase", theme_mode: "light", font_family: "", mkvmerge_path: "", assfontsubset_path: "", auto_ep_encode: true, auto_ep_mux: true, ep_not_shared: true, close_behavior: "tray", last_workflow: "encode", default_params_matrix: matrix() });
 export const isEncode = (type: string) => ["SC", "TC", "NO_SUB"].includes(type);
