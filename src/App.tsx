@@ -69,7 +69,8 @@ export default function App() {
   useLayoutEffect(() => {
     document.documentElement.style.setProperty("--ui-font", fontStack(state?.settings.font_family));
     document.documentElement.style.setProperty("--log-font", fontStack(state?.settings.font_family, true));
-  }, [state?.settings.font_family]);
+    document.documentElement.dataset.fontRendering = state?.settings.use_native_font_rendering === false ? "software" : "native";
+  }, [state?.settings.font_family, state?.settings.use_native_font_rendering]);
   useEffect(() => {
     if (!startupSettled) return;
     let disposed = false;

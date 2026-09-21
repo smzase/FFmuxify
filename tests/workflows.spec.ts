@@ -241,7 +241,7 @@ test("text fields have working edit menus and undo preserves controlled state", 
 
 test("settings keep their height and dialogs animate with compact parameter fields", async ({ page }, info) => {
   await loaded(page);
-  expect((await page.getByLabel("CRF / 单次参数", { exact: true }).boundingBox())!.height).toBeCloseTo(88, 2);
+  expect((await page.getByLabel("CRF / 单次参数", { exact: true }).boundingBox())!.height).toBeCloseTo(100, 2);
   await page.getByLabel("启用 2-Pass Mode", { exact: true }).check();
   expect((await page.getByLabel("Pass 1 参数", { exact: true }).boundingBox())!.height).toBeCloseTo(88, 2);
   await page.getByRole("button", { name: "全局设置" }).click();

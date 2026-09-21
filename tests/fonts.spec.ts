@@ -41,6 +41,10 @@ test("20000 fonts stay virtualized and searchable, with cached enumeration and k
   await fontButton(page).click();
   await expect(page.locator(".font-list-footer")).toHaveText("可选字体：20001");
   expect(await page.getByRole("option").count()).toBeLessThan(25);
+  const fontList = page.locator(".font-options");
+  await fontList.hover();
+  await page.mouse.wheel(0, 600);
+  await expect.poll(() => fontList.evaluate(node => node.scrollTop)).toBeGreaterThan(0);
   await page.screenshot({ path: info.outputPath("fonts-light.png"), animations: "disabled" });
   await search(page).press("End");
   await expect(page.getByRole("option", { name: /测试字体 19999/ })).toBeInViewport();
@@ -67,6 +71,7 @@ test("20000 fonts stay virtualized and searchable, with cached enumeration and k
   await expect(page.locator(".font-popover")).toHaveCount(0);
   await page.getByRole("button", { name: "取消", exact: true }).click();
   await openSettings(page);
+  await expect(page.getByLabel("系统原生字体渲染", { exact: true })).toBeChecked();
   await fontButton(page).click();
   expect(await page.evaluate(() => (window as unknown as { fontRequests: number }).fontRequests)).toBe(1);
 });

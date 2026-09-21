@@ -108,7 +108,16 @@ export function FontPicker({ value, onChange, disabled }: { value: string; onCha
           </div>
           {loading && <div className="font-list-message" role="status"><LoaderCircle className="h-4 w-4 animate-spin" />正在读取已安装字体…</div>}
           {error && <div className="font-list-message" role="alert"><span>{error}</span><Button variant="ghost" size="sm" onClick={() => setRetry(count => count + 1)}>重试</Button></div>}
-          <div ref={viewport} id={listId} role="listbox" aria-label="字体列表" aria-busy={loading || query !== deferredQuery} className="font-options" onScroll={event => setScrollTop(event.currentTarget.scrollTop)}>
+          <div ref={viewport} id={listId} role="listbox" aria-label="字体列表" aria-busy={loading || query !== deferredQuery} className="font-options" onScroll={event => setScrollTop(event.currentTarget.scrollTop)} onWheelCapture={event => {
+            const node = event.currentTarget;
+            const max = node.scrollHeight - node.clientHeight;
+            if (max <= 0 || event.deltaY === 0) return;
+            const delta = event.deltaMode === 1 ? event.deltaY * rowHeight : event.deltaY;
+            event.preventDefault();
+            event.stopPropagation();
+            node.scrollTop = Math.max(0, Math.min(max, node.scrollTop + delta));
+            setScrollTop(node.scrollTop);
+          }}>
             <div className="relative" style={{ height: filtered.length * rowHeight }}>
               {filtered.slice(start, end).map((font, offset) => {
                 const index = start + offset;

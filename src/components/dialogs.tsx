@@ -88,6 +88,7 @@ export function SettingsDialog({ settings, close, save }: { settings: Settings; 
       <div className="settings-scroll" key={page}>
         {page === "常规" ? <div className="setting-stack">
           <h3>界面</h3><FontPicker value={draft.font_family ?? ""} onChange={font_family => update({ font_family })} disabled={saving} />
+          <Check label="系统原生字体渲染" checked={draft.use_native_font_rendering !== false} onChange={use_native_font_rendering => update({ use_native_font_rendering })} disabled={saving} />
           <h3>存储路径配置</h3><Field label="配置根目录" value={draft.base_path} onChange={value => update({ base_path: value })} onBrowse={() => pick("base_path")} compact />
           <Check label="在目录下创建独立文件夹" checked={draft.use_sub_folder} onChange={value => update({ use_sub_folder: value })} />
           <Field label="文件夹名称" value={draft.folder_name} disabled={!draft.use_sub_folder} onChange={value => update({ folder_name: value })} />
