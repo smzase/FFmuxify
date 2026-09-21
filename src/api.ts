@@ -29,6 +29,7 @@ export const api = {
   },
   flush: () => saveTail,
   setTheme: async (dark: boolean) => { if (isDesktop()) await invoke("set_theme", { dark }); },
+  frontendReady: async () => { if (isDesktop()) await invoke("frontend_ready"); },
   finishClose: async (exit: boolean) => { if (isDesktop()) await invoke("finish_close", { exit }); },
   runTask: (task: unknown) => isDesktop() ? invoke<string>("run_task", { task }) : Promise.reject("请在桌面客户端运行媒体任务"),
   stopTask: () => invoke<boolean>("stop_task"),

@@ -11,6 +11,10 @@ use tauri_plugin_dialog::DialogExt;
 static PROCESS: Lazy<Arc<Mutex<Option<Child>>>> = Lazy::new(|| Arc::new(Mutex::new(None)));
 static RUNNING: AtomicBool = AtomicBool::new(false);
 static STOP_REQUESTED: AtomicBool = AtomicBool::new(false);
+struct StartupWindow {
+    ready: AtomicBool,
+    maximized: bool,
+}
 const HARDWARE: [&str; 4] = ["CPU", "QSV", "NVENC", "VCN"];
 const CODECS: [&str; 4] = ["X264", "X265", "X266", "AV1"];
 
@@ -356,7 +360,30 @@ fn stop_task() -> bool {
 
 #[tauri::command]
 fn set_theme(window: tauri::WebviewWindow, dark: bool) -> Result<(), String> {
-    window.set_theme(Some(if dark { Theme::Dark } else { Theme::Light })).map_err(|error| error.to_string())
+    window.set_theme(Some(if dark { Theme::Dark } else { Theme::Light })).map_err(|error| error.to_string())?;
+    let background = if dark { tauri::window::Color(25, 26, 27, 255) } else { tauri::window::Color(250, 250, 250, 255) };
+    window.set_background_color(Some(background)).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn frontend_ready(window: tauri::WebviewWindow, startup: tauri::State<'_, StartupWindow>) -> Result<(), String> {
+    // A repeated readiness signal must not reopen a window hidden to the tray.
+    if startup.ready.load(Ordering::SeqCst) { return Ok(()); }
+    // Windows can reveal a hidden window when maximizing it. Defer this until the UI is ready.
+    if startup.maximized { window.maximize().map_err(|error| error.to_string())?; }
+    window.show().map_err(|error| error.to_string())?;
+    startup.ready.store(true, Ordering::SeqCst);
+    window.set_focus().map_err(|error| error.to_string())
+}
+
+fn restore_main_window(app: &AppHandle) {
+    // Tray clicks and a second launch must not reveal the uninitialized webview.
+    if !app.try_state::<StartupWindow>().map(|startup| startup.ready.load(Ordering::SeqCst)).unwrap_or(false) { return; }
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+    }
 }
 
 #[tauri::command]
@@ -387,16 +414,20 @@ async fn finish_close(app: AppHandle, window: tauri::WebviewWindow, exit: bool) 
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _, _| {
-            if let Some(window) = app.get_webview_window("main") { let _ = window.show(); let _ = window.unminimize(); let _ = window.set_focus(); }
+            restore_main_window(app);
         }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .manage(PROCESS.clone())
         .setup(|app| {
             let settings = load_state();
+            app.manage(StartupWindow {
+                ready: AtomicBool::new(false),
+                maximized: settings["settings"]["window_maximized"].as_bool() == Some(true),
+            });
             if let Some(window) = app.get_webview_window("main") {
                 let dark = settings["settings"]["theme_mode"].as_str() == Some("dark");
-                let _ = window.set_theme(Some(if dark { Theme::Dark } else { Theme::Light }));
+                let _ = set_theme(window.clone(), dark);
                 if let Some(geometry) = settings["settings"]["window_geometry"].as_array().filter(|value| value.len() == 4) {
                     let width = geometry[2].as_f64().unwrap_or(1300.0).max(1100.0);
                     let height = geometry[3].as_f64().unwrap_or(950.0).max(800.0);
@@ -412,12 +443,11 @@ pub fn run() {
                     if visible { let _ = window.set_position(tauri::LogicalPosition::new(x, y)); }
                     else { let _ = window.center(); }
                 }
-                if settings["settings"]["window_maximized"].as_bool() == Some(true) { let _ = window.maximize(); }
             }
             let menu = MenuBuilder::new(app).text("show", "显示主窗口").separator().text("quit", "退出").build()?;
             let mut tray = TrayIconBuilder::new().menu(&menu).show_menu_on_left_click(false).tooltip("FFmuxify").on_tray_icon_event(|tray, event| {
                 if matches!(event, TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } | TrayIconEvent::DoubleClick { button: MouseButton::Left, .. }) {
-                    if let Some(window) = tray.app_handle().get_webview_window("main") { let _ = window.show(); let _ = window.unminimize(); let _ = window.set_focus(); }
+                    restore_main_window(tray.app_handle());
                 }
             });
             if let Some(icon) = app.default_window_icon() { tray = tray.icon(icon.clone()); }
@@ -425,9 +455,10 @@ pub fn run() {
             Ok(())
         })
         .on_menu_event(|app, event| match event.id().as_ref() {
-            "show" => if let Some(window) = app.get_webview_window("main") { let _ = window.show(); let _ = window.unminimize(); let _ = window.set_focus(); },
+            "show" => restore_main_window(app),
             "quit" => {
-                if let Some(window) = app.get_webview_window("main") { let _ = window.show(); let _ = window.set_focus(); }
+                if !app.state::<StartupWindow>().ready.load(Ordering::SeqCst) { app.exit(0); return; }
+                restore_main_window(app);
                 emit(app, "close-requested", json!({"quit":true}));
             },
             _ => {}
@@ -438,7 +469,7 @@ pub fn run() {
                 let _ = window.emit("close-requested", json!({"quit":false}));
             }
         })
-        .invoke_handler(tauri::generate_handler![load_state,save_state,pick_folder,pick_file,run_task,stop_task,set_theme,finish_close])
+        .invoke_handler(tauri::generate_handler![load_state,save_state,pick_folder,pick_file,run_task,stop_task,set_theme,frontend_ready,finish_close])
         .run(tauri::generate_context!())
         .expect("error while running FFmuxify");
 }

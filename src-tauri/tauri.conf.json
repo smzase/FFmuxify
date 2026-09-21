@@ -4,6 +4,6 @@
   "version": "1.0.0",
   "identifier": "com.ffmuxify.desktop",
   "build": { "beforeDevCommand": "npm run dev", "devUrl": "http://localhost:1420", "beforeBuildCommand": "npm run build", "frontendDist": "../dist" },
-  "app": { "windows": [{ "title": "FFmuxify", "width": 1300, "height": 950, "minWidth": 1100, "minHeight": 800, "resizable": true }], "security": { "csp": null }, "withGlobalTauri": false },
+  "app": { "windows": [{ "title": "FFmuxify", "width": 1300, "height": 950, "minWidth": 1100, "minHeight": 800, "resizable": true, "visible": false, "backgroundColor": "#fafafa" }], "security": { "csp": null }, "withGlobalTauri": false },
   "bundle": { "active": true, "targets": ["nsis"], "windows": { "webviewInstallMode": { "type": "embedBootstrapper" }, "nsis": { "installMode": "currentUser" } }, "icon": ["icons/icon.ico"] }
 }

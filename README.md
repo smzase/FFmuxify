@@ -40,7 +40,20 @@ See [AGENTS.md](AGENTS.md) and [CLAUDE.md](CLAUDE.md) for compatibility and main
 
 [Build Windows EXE](.github/workflows/build-windows.yml) runs on pushes, pull requests, and manual dispatch. It builds a Windows x64 EXE on `windows-2022` using Node.js 24, Rust 1.97.1, `npm ci`, and the same `npm run tauri:build:exe` command as local builds.
 
-After a successful run, open its **Artifacts** section and download **FFmuxify-windows-x64**. Extract the archive to get `ffmuxify.exe`. Artifacts are retained for 14 days. The workflow only uploads build artifacts; it does not publish GitHub Releases or require signing secrets.
+After a successful run, open its **Artifacts** section and download **ffmuxify.exe** directly. The upload uses `actions/upload-artifact@v7` with `archive: false`, so this single-file artifact has no ZIP wrapper. Artifacts are retained for 14 days. The workflow only uploads build artifacts; it does not publish GitHub Releases or require signing secrets.
+
+## Application icon
+
+Replace `src-tauri/icons/icon.ico` with your Windows icon and rebuild. This file is configured in `src-tauri/tauri.conf.json` and supplies the executable, window, and tray icon.
+
+To generate icons from a square PNG or SVG with transparency, place the source image in the repository (for example, `app-icon.png`) and run:
+
+```powershell
+npm run tauri -- icon .\app-icon.png --output .\src-tauri\icons
+npm run tauri:build:exe
+```
+
+Commit the generated `src-tauri/icons/icon.ico` so GitHub Actions uses the same icon.
 
 ## Behavior and validation
 

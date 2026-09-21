@@ -22,6 +22,8 @@ const historyKey = (name: string, ep: string, type: string) => JSON.stringify([n
 
 export default function App() {
   const [state, setState] = useState<AppState | null>(null);
+  const [startupError, setStartupError] = useState("");
+  const startupShown = useRef(false);
   const [profileName, setProfileName] = useState("");
   const [tasks, setTasks] = useState<QueueTask[]>([]);
   const [queueMode, setQueueMode] = useState<Workflow | null>(null);
@@ -41,6 +43,7 @@ export default function App() {
   stateRef.current = state;
   const workflow = state?.settings.last_workflow ?? "encode";
   const dark = state?.settings.theme_mode === "dark";
+  const startupSettled = !!state || !!startupError;
   const profile = state?.profiles[profileName];
   const running = !!active;
   const visibleTasks = tasks.filter(task => workflowOf(task) === workflow);
@@ -50,20 +53,45 @@ export default function App() {
   };
 
   useEffect(() => {
-    void api.loadState().then(loaded => { setState(loaded); setProfileName(Object.keys(loaded.profiles)[0] ?? ""); }).catch(error => setNotice("加载配置失败：" + String(error)));
+    let disposed = false;
+    void api.loadState().then(loaded => {
+      if (!disposed) { setState(loaded); setProfileName(Object.keys(loaded.profiles)[0] ?? ""); }
+    }).catch(error => { if (!disposed) setStartupError("加载配置失败：" + String(error)); });
     const suppressMenu = (event: MouseEvent) => event.preventDefault();
     document.addEventListener("contextmenu", suppressMenu);
-    return () => document.removeEventListener("contextmenu", suppressMenu);
+    return () => { disposed = true; document.removeEventListener("contextmenu", suppressMenu); };
   }, []);
   useEffect(() => {
     if (!state) return;
     void api.saveState(state.settings, state.profiles).catch(error => setNotice("自动保存失败：" + String(error)));
   }, [state]);
   useEffect(() => {
+    if (!startupSettled) return;
+    let disposed = false;
+    let frame = 0;
+    let timer = 0;
     document.documentElement.dataset.theme = dark ? "dark" : "light";
     document.documentElement.style.colorScheme = dark ? "dark" : "light";
-    if (state) void api.setTheme(dark).catch(error => setNotice("窗口主题切换失败：" + String(error)));
-  }, [dark, !!state]);
+    void api.setTheme(dark).catch(error => setNotice("窗口主题切换失败：" + String(error))).then(() => {
+      if (disposed || startupShown.current) return;
+      const show = () => {
+        window.cancelAnimationFrame(frame);
+        window.clearTimeout(timer);
+        if (disposed || startupShown.current) return;
+        startupShown.current = true;
+        void api.frontendReady().catch(error => {
+          startupShown.current = false;
+          setStartupError("显示窗口失败：" + String(error));
+          setNotice("显示窗口失败：" + String(error));
+        });
+      };
+      // Allow the committed UI and its theme to paint before revealing the native window.
+      frame = window.requestAnimationFrame(() => { frame = window.requestAnimationFrame(show); });
+      // Hidden WebView2 windows can suspend animation frames; never wait for them forever.
+      timer = window.setTimeout(show, 100);
+    });
+    return () => { disposed = true; window.cancelAnimationFrame(frame); window.clearTimeout(timer); };
+  }, [dark, startupSettled]);
   useEffect(() => {
     if (!notice) return;
     toast(notice);
@@ -141,8 +169,10 @@ export default function App() {
   };
   const closeWindow = async (quit: boolean) => {
     const current = stateRef.current;
-    if (!current) return;
-    try { await api.saveState(current.settings, current.profiles); await api.flush(); await api.finishClose(quit); }
+    try {
+      if (!current) { await api.finishClose(true); return; }
+      await api.saveState(current.settings, current.profiles); await api.flush(); await api.finishClose(quit);
+    }
     catch (error) { setNotice("关闭前保存失败：" + String(error)); }
   };
   closeHandler.current = quit => {
@@ -237,7 +267,10 @@ export default function App() {
   } });
   const controls = { start: () => !activeRef.current && setQueueMode(workflow), stop, running, canStart: !running && visibleTasks.some(task => task.status === "pending") };
 
-  if (!state) return <div className="loading">{notice || "正在加载配置…"}</div>;
+  if (!state) return <div className="loading"><div className="flex flex-col items-center gap-3">
+    <p role={startupError ? "alert" : "status"}>{startupError || "正在加载配置…"}</p>
+    {startupError && <Button variant="outline" onClick={() => window.location.reload()}>重新加载</Button>}
+  </div></div>;
   return <><div className="app-shell">
     <aside className="sidebar">
       <div className="workflow-tabs"><Segmented items={["encode", "mux"]} value={workflow} onChange={value => updateSettings({ last_workflow: value as Workflow })} label="工作流程" /></div>
