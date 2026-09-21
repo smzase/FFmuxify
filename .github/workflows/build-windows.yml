@@ -1,0 +1,60 @@
+name: Build Windows EXE
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_TOOLCHAIN: "1.97.1"
+
+jobs:
+  build-windows:
+    name: Windows x64
+    runs-on: windows-2022
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install Rust toolchain
+        run: rustup toolchain install $env:RUST_TOOLCHAIN --profile minimal
+
+      - name: Select Rust toolchain
+        run: rustup override set $env:RUST_TOOLCHAIN
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      # Tauri also runs the TypeScript checks and Vite production build.
+      - name: Build standalone EXE
+        run: npm run tauri:build:exe
+
+      - name: Upload Windows executable
+        uses: actions/upload-artifact@v7
+        with:
+          name: FFmuxify-windows-x64
+          path: src-tauri/target/release/ffmuxify.exe
+          if-no-files-found: error
+          retention-days: 14
