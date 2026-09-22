@@ -6,9 +6,10 @@ import { Check, Field, Parameters, Segmented } from "./fields";
 import { CODECS, HARDWARE, type Codec, type Hardware, type Profile, type QueueTask, type TaskType } from "../types";
 import { emptyParams } from "../state";
 
-type WorkspaceProps = { profile: Profile; update: (patch: Partial<Profile>) => void; browse: (key: keyof Profile, file?: boolean) => void };
+type ParamHeightKey = "param_height_crf" | "param_height_two_pass";
+type WorkspaceProps = { profile: Profile; update: (patch: Partial<Profile>) => void; browse: (key: keyof Profile, file?: boolean) => void; paramHeights: { crf: number; twoPass: number }; onParamHeightChange: (key: ParamHeightKey, height: number) => void };
 
-export function EncodeWorkspace({ profile: p, update, browse, add, batch }: WorkspaceProps & {
+export function EncodeWorkspace({ profile: p, update, browse, paramHeights, onParamHeightChange, add, batch }: WorkspaceProps & {
   add: (kind: TaskType | "BOTH", ep: string, suffix: string) => void; batch: () => void;
 }) {
   const mode = p.has_subtitle_mode ? "with_sub" : "no_sub";
@@ -38,10 +39,10 @@ export function EncodeWorkspace({ profile: p, update, browse, add, batch }: Work
         <Segmented label="编码器" items={CODECS} value={codec} onChange={value => update({ ["selected_codec_" + mode]: value })} />
         <span className="grow" /><Check label="启用 2-Pass Mode" checked={param.enable_2pass} onChange={value => setParam({ enable_2pass: value })} />
       </div>
-      <Parameters value={param} onChange={setParam} />
+      <Parameters value={param} height={param.enable_2pass ? paramHeights.twoPass : paramHeights.crf} onHeightChange={height => onParamHeightChange(param.enable_2pass ? "param_height_two_pass" : "param_height_crf", height)} onChange={setParam} />
     </CardContent></Card>
     <Card><CardContent className="encode-controls">
-      <Field label="集数" className="episode-field" value={p[episodeKey]} onChange={value => update({ [episodeKey]: value })} />
+        <Field label="集数" className="episode-field" name={`episode-${mode}`} autoComplete="new-password" value={p[episodeKey]} onChange={value => update({ [episodeKey]: value })} />
       <Button variant="outline" onClick={batch}><ListPlus size={16} />批量多集</Button>
       <Check label="添加后缀" checked={suffixEnabled} onChange={value => update({ ["suffix_enabled_" + mode]: value })} />
       <Input className="suffix-input" aria-label="压制后缀" value={suffix} disabled={!suffixEnabled} onChange={event => update({ ["suffix_" + mode]: event.target.value })} />
@@ -70,7 +71,7 @@ export function MuxWorkspace({ profile: p, update, browse, add, start, running }
       <div className="two-col">{field("原视频", "extract_source_dir", true)}{field("视频名", "extract_source_name", false, "[Erai-raws] Title - <ep> <hash>.mkv")}</div>
       <div className="two-col">{field("输出", "extract_output_dir", true)}{field("输出名", "extract_output_name", false, "Title - S01E<ep>.mkv")}</div>
       <div className="chapter-row">
-        <Field label="集数" className="episode-field" value={p.extract_ep} onChange={value => update({ extract_ep: value })} />
+        <Field label="集数" className="episode-field" name="episode-extract" autoComplete="new-password" value={p.extract_ep} onChange={value => update({ extract_ep: value })} />
         <Field label="章节" value={p.extract_chapter_file} onChange={value => update({ extract_chapter_file: value })} compact onBrowse={() => browse("extract_chapter_file", true)} placeholder={"C:\\Folder\\<ep>\\CHAPTER<ep>.txt"} />
       </div>
       <div className="section-bottom">
@@ -86,7 +87,7 @@ export function MuxWorkspace({ profile: p, update, browse, add, start, running }
     <Card><CardContent className="mux-form" aria-label="字体子集化">
       <div className="two-col">{field("字幕目录", "subset_sub_dir", true, "C:\\Folder\\<ep>")}{field("字体目录", "subset_font_dir", true)}</div>
       <div className="subset-row">
-        <Field label="集数" className="episode-field" value={p.subset_ep} onChange={value => update({ subset_ep: value })} />
+        <Field label="集数" className="episode-field" name="episode-subset" autoComplete="new-password" value={p.subset_ep} onChange={value => update({ subset_ep: value })} />
         {field("简体", "subset_sub_sc")}{field("繁体", "subset_sub_tc")}{actions("subset")}
       </div>
     </CardContent></Card>
@@ -97,7 +98,7 @@ export function MuxWorkspace({ profile: p, update, browse, add, start, running }
       <div className="subtitle-track">{field("简体", "mux_sub_sc")}{field("名称", "mux_sub_sc_name")}<Check label="简体默认轨" checked={p.mux_sub_sc_default} onChange={value => update({ mux_sub_sc_default: value })} /></div>
       <div className="subtitle-track">{field("繁体", "mux_sub_tc")}{field("名称", "mux_sub_tc_name")}<Check label="繁体默认轨" checked={p.mux_sub_tc_default} onChange={value => update({ mux_sub_tc_default: value })} /></div>
       <div className="section-bottom">
-        <Field label="集数" className="episode-field" value={p.mux_ep} onChange={value => update({ mux_ep: value })} />
+        <Field label="集数" className="episode-field" name="episode-mux" autoComplete="new-password" value={p.mux_ep} onChange={value => update({ mux_ep: value })} />
         <Check label="添加后缀" checked={p.mux_suffix_enabled} onChange={value => update({ mux_suffix_enabled: value })} />
         <Input className="suffix-input" aria-label="混流后缀" value={p.mux_suffix} disabled={!p.mux_suffix_enabled} onChange={event => update({ mux_suffix: event.target.value })} />
         {actions("mux")}

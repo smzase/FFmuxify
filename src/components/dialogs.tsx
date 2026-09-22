@@ -62,6 +62,7 @@ export function BatchDialog({ close, submit }: { close: () => void; submit: (epi
   </DialogContent></Dialog>;
 }
 
+type ParamHeightKey = "param_height_crf" | "param_height_two_pass";
 export function SettingsDialog({ settings, close, save }: { settings: Settings; close: () => void; save: (settings: Settings) => Promise<void> }) {
   const { open, dismiss } = useDialogMotion(close);
   const [draft, setDraft] = useState(() => structuredClone(settings));
@@ -70,6 +71,7 @@ export function SettingsDialog({ settings, close, save }: { settings: Settings; 
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const update = (patch: Partial<Settings>) => { setDraft(current => ({ ...current, ...patch })); setMessage(""); };
+  const updateParamHeight = (key: ParamHeightKey, height: number) => update({ [key]: height });
   const current = draft.default_params_matrix[page]?.[codec] ?? emptyParams();
   const pick = async (key: keyof Settings, file = false) => {
     try { const value = file ? await api.pickFile() : await api.pickFolder(); if (value) update({ [key]: value }); }
@@ -103,7 +105,7 @@ export function SettingsDialog({ settings, close, save }: { settings: Settings; 
           <h3>{page} 新配置默认参数</h3>
           <Segmented label="默认编码器" items={CODECS} value={codec} onChange={setCodec} />
           <Check label="启用 2-Pass Mode" checked={current.enable_2pass} onChange={value => update({ default_params_matrix: { ...draft.default_params_matrix, [page]: { ...draft.default_params_matrix[page], [codec]: { ...current, enable_2pass: value } } } })} />
-          <Parameters value={current} onChange={patch => update({ default_params_matrix: { ...draft.default_params_matrix, [page]: { ...draft.default_params_matrix[page], [codec]: { ...current, ...patch } } } })} />
+          <Parameters value={current} height={current.enable_2pass ? draft.param_height_two_pass : draft.param_height_crf} onHeightChange={height => updateParamHeight(current.enable_2pass ? "param_height_two_pass" : "param_height_crf", height)} onChange={patch => update({ default_params_matrix: { ...draft.default_params_matrix, [page]: { ...draft.default_params_matrix[page], [codec]: { ...current, ...patch } } } })} />
         </div>}
       </div>
     </div>

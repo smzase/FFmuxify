@@ -239,6 +239,36 @@ test("text fields have working edit menus and undo preserves controlled state", 
   await expect(page.getByRole("menuitem", { name: "清空日志" })).toBeVisible();
 });
 
+test("parameter heights can be resized and persist immediately", async ({ page }) => {
+  await loaded(page);
+  const crf = page.getByLabel("CRF / 单次参数", { exact: true });
+  const initial = await crf.boundingBox();
+  await page.mouse.move(initial!.x + initial!.width - 4, initial!.y + initial!.height - 4);
+  await page.mouse.down();
+  await page.mouse.move(initial!.x + initial!.width - 4, initial!.y + initial!.height + 32, { steps: 5 });
+  await page.mouse.up();
+  await expect.poll(async () => (await crf.boundingBox())!.height).toBeGreaterThan(initial!.height + 20);
+  const resized = (await crf.boundingBox())!.height;
+  await page.reload();
+  await expect.poll(async () => (await page.getByLabel("CRF / 单次参数", { exact: true }).boundingBox())!.height).toBeCloseTo(resized, 0);
+  await expect(page.getByLabel("集数", { exact: true }).first()).toHaveAttribute("autocomplete", "new-password");
+  await expect(page.getByLabel("集数", { exact: true }).first()).toHaveAttribute("name", "episode-with_sub");
+  await page.getByLabel("启用 2-Pass Mode", { exact: true }).check();
+  const pass1 = page.getByLabel("Pass 1 参数", { exact: true });
+  const pass2 = page.getByLabel("Pass 2 参数", { exact: true });
+  const passInitial = await pass1.boundingBox();
+  await page.mouse.move(passInitial!.x + passInitial!.width - 4, passInitial!.y + passInitial!.height - 4);
+  await page.mouse.down();
+  await page.mouse.move(passInitial!.x + passInitial!.width - 4, passInitial!.y + passInitial!.height + 24, { steps: 4 });
+  await page.mouse.up();
+  await expect.poll(async () => (await pass1.boundingBox())!.height).toBeGreaterThan(passInitial!.height + 15);
+  await expect.poll(async () => (await pass2.boundingBox())!.height).toBeCloseTo((await pass1.boundingBox())!.height, 0);
+  const passResized = (await pass1.boundingBox())!.height;
+  await page.reload();
+  await page.getByLabel("启用 2-Pass Mode", { exact: true }).check();
+  await expect.poll(async () => (await page.getByLabel("Pass 1 参数", { exact: true }).boundingBox())!.height).toBeCloseTo(passResized, 0);
+});
+
 test("settings keep their height and dialogs animate with compact parameter fields", async ({ page }, info) => {
   await loaded(page);
   expect((await page.getByLabel("CRF / 单次参数", { exact: true }).boundingBox())!.height).toBeCloseTo(100, 2);

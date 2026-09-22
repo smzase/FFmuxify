@@ -290,7 +290,7 @@ export default function App() {
       </div></div>
     </aside>
     <main className="main-content">
-      {profile ? workflow === "encode" ? <EncodeWorkspace profile={profile} update={updateProfile} browse={browse} add={add} batch={() => setBatchOpen(true)} /> : <MuxWorkspace profile={profile} update={updateProfile} browse={browse} add={add} start={startDirect} running={running} /> : <div className="empty-state">从左侧新建配置，开始处理视频。</div>}
+      {profile ? workflow === "encode" ? <EncodeWorkspace profile={profile} update={updateProfile} browse={browse} paramHeights={{ crf: state.settings.param_height_crf, twoPass: state.settings.param_height_two_pass }} onParamHeightChange={(key, height) => updateSettings({ [key]: height })} add={add} batch={() => setBatchOpen(true)} /> : <MuxWorkspace profile={profile} update={updateProfile} browse={browse} paramHeights={{ crf: state.settings.param_height_crf, twoPass: state.settings.param_height_two_pass }} onParamHeightChange={(key, height) => updateSettings({ [key]: height })} add={add} start={startDirect} running={running} /> : <div className="empty-state">从左侧新建配置，开始处理视频。</div>}
       <div className="bottom-grid"><QueuePanel queues={visibleTasks} reorder={reorder} remove={remove} clear={clear} controls={workflow === "mux" ? controls : undefined} />
         {workflow === "encode" ? <EncodeLogPanel metrics={metrics} log={logs.encode} clear={() => setLogs(previous => ({ ...previous, encode: [] }))} controls={controls} /> : <MuxLogPanel muxLog={logs.mux} subsetLog={logs.subset} clearMux={() => setLogs(previous => ({ ...previous, mux: [] }))} clearSubset={() => setLogs(previous => ({ ...previous, subset: [] }))} />}
       </div>
