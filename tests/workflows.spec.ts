@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { defaultSettings, newProfile } from "../src/state";
 
 async function loaded(page: Page) {
   await page.goto("/");
@@ -165,6 +166,77 @@ test("batch modes update the right episode and queues stay separate", async ({ p
   await page.locator(".queue-item").first().click({ button: "right" });
   await page.getByRole("menuitem", { name: "移除任务" }).click();
   await expect(page.locator(".queue-item")).toHaveCount(2);
+});
+
+test("encode and mux controls run independently", async ({ page }) => {
+  const settings = defaultSettings();
+  await page.addInitScript(initial => {
+    const callbacks = new Map<number, (event: { payload: unknown }) => void>();
+    const listeners = new Map<string, number[]>();
+    const calls: { run: { id: string; type: string }[]; stop: string[] } = { run: [], stop: [] };
+    let callbackId = 0;
+    Object.assign(window, {
+      __mockNative: {
+        calls,
+        emit: (event: string, payload: unknown) => {
+          for (const id of listeners.get(event) ?? []) callbacks.get(id)?.({ payload });
+        },
+      },
+      __TAURI_EVENT_PLUGIN_INTERNALS__: { unregisterListener: () => {} },
+      __TAURI_INTERNALS__: {
+        transformCallback: (callback: (event: { payload: unknown }) => void) => {
+          const id = ++callbackId;
+          callbacks.set(id, callback);
+          return id;
+        },
+        invoke: async (command: string, args: { event?: string; handler?: number; task?: { id: string; type: string }; workflow?: string } = {}) => {
+          if (command === "load_state") return initial;
+          if (command === "plugin:event|listen") {
+            listeners.set(args.event!, [...(listeners.get(args.event!) ?? []), args.handler!]);
+            return args.handler;
+          }
+          if (command === "run_task") {
+            calls.run.push({ id: args.task!.id, type: args.task!.type });
+            return args.task!.id;
+          }
+          if (command === "stop_task") { calls.stop.push(args.workflow!); return true; }
+          return undefined;
+        },
+      },
+    });
+  }, { settings, profiles: { "示例配置": newProfile() }, config_dir: "Test" });
+  const native = () => page.evaluate(() => (window as typeof window & { __mockNative: {
+    calls: { run: { id: string; type: string }[]; stop: string[] };
+    emit: (event: string, payload: unknown) => void;
+  } }).__mockNative.calls);
+
+  await loaded(page);
+  await page.getByRole("button", { name: "简繁" }).click();
+  await page.getByRole("button", { name: "开始压制" }).click();
+  await expect.poll(async () => (await native()).run.length).toBe(1);
+  await page.getByRole("radio", { name: "封装", exact: true }).click();
+  await expect(page.locator(".queue-panel").getByRole("button", { name: "开始", exact: true })).toBeDisabled();
+  for (const button of await page.locator(".section-actions").getByRole("button", { name: "开始", exact: true }).all()) await expect(button).toBeEnabled();
+  await page.getByLabel("提取轨道").getByRole("button", { name: "加入队列" }).click();
+  await page.locator(".queue-panel").getByRole("button", { name: "开始", exact: true }).click();
+  await expect.poll(async () => (await native()).run.length).toBe(2);
+  await expect(page.locator(".queue-panel").getByRole("button", { name: "停止", exact: true })).toBeVisible();
+  await page.locator(".queue-panel").getByRole("button", { name: "停止", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "确认终止" }).click();
+  await expect.poll(async () => (await native()).stop).toEqual(["mux"]);
+  const muxTask = (await native()).run[1];
+  await page.evaluate(id => (window as typeof window & { __mockNative: { emit: (event: string, payload: unknown) => void } }).__mockNative.emit("task-finished", { id, success: false, stopped: true, duration: "1s" }), muxTask.id);
+  await page.getByLabel("混流").getByRole("button", { name: "开始", exact: true }).click();
+  await expect.poll(async () => (await native()).run.length).toBe(3);
+  await page.getByRole("radio", { name: "压制", exact: true }).click();
+  await expect(page.getByRole("button", { name: "强制终止" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "开始压制" })).toBeDisabled();
+  const encodeTask = (await native()).run[0];
+  await page.evaluate(id => (window as typeof window & { __mockNative: { emit: (event: string, payload: unknown) => void } }).__mockNative.emit("task-finished", { id, success: true, stopped: false, duration: "1s" }), encodeTask.id);
+  await expect.poll(async () => (await native()).run.length).toBe(4);
+  await page.getByRole("radio", { name: "封装", exact: true }).click();
+  await expect(page.locator(".queue-panel").getByRole("button", { name: "停止", exact: true })).toBeVisible();
+  await expect.poll(async () => (await native()).stop).toEqual(["mux"]);
 });
 
 test("only editable text and logs can be selected; default context menu is prevented", async ({ page }) => {

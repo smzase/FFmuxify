@@ -47,7 +47,7 @@ export const api = {
   frontendReady: async () => { if (isDesktop()) await invoke("frontend_ready"); },
   finishClose: async (exit: boolean) => { if (isDesktop()) await invoke("finish_close", { exit }); },
   runTask: (task: unknown) => isDesktop() ? invoke<string>("run_task", { task }) : Promise.reject("请在桌面客户端运行媒体任务"),
-  stopTask: () => invoke<boolean>("stop_task"),
+  stopTask: (workflow: "encode" | "mux") => invoke<boolean>("stop_task", { workflow }),
   pickFolder: async () => isDesktop() ? invoke<string | null>("pick_folder") : null,
   pickFile: async () => isDesktop() ? invoke<string | null>("pick_file") : null,
   on: <T,>(event: string, handler: (payload: T) => void): Promise<UnlistenFn> => isDesktop() ? listen<T>(event, e => handler(e.payload)) : Promise.resolve(() => {}),

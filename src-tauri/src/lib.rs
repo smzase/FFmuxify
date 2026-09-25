@@ -1,17 +1,28 @@
 #![recursion_limit = "256"]
 mod fonts;
-use once_cell::sync::Lazy;
 use regex::Regex;
 use serde_json::{json, Map, Value};
-use std::{fs, io::{BufRead, BufReader}, path::{Path, PathBuf}, process::{Child, Command, Stdio}, sync::{atomic::{AtomicBool, Ordering}, Arc, Mutex}, thread, time::Instant};
+use std::{fs, io::{BufRead, BufReader}, path::{Path, PathBuf}, process::{Child, Command, Stdio}, sync::{atomic::{AtomicBool, Ordering}, Mutex}, thread, time::Instant};
 use tauri::{menu::MenuBuilder, tray::{TrayIconBuilder, TrayIconEvent, MouseButton, MouseButtonState}, AppHandle, Emitter, Manager, Theme, WindowEvent};
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
 use tauri_plugin_dialog::DialogExt;
 
-static PROCESS: Lazy<Arc<Mutex<Option<Child>>>> = Lazy::new(|| Arc::new(Mutex::new(None)));
-static RUNNING: AtomicBool = AtomicBool::new(false);
-static STOP_REQUESTED: AtomicBool = AtomicBool::new(false);
+struct TaskRunner {
+    process: Mutex<Option<Child>>,
+    running: AtomicBool,
+    stop_requested: AtomicBool,
+}
+impl TaskRunner {
+    const fn new() -> Self {
+        Self { process: Mutex::new(None), running: AtomicBool::new(false), stop_requested: AtomicBool::new(false) }
+    }
+}
+static ENCODE_RUNNER: TaskRunner = TaskRunner::new();
+static MUX_RUNNER: TaskRunner = TaskRunner::new();
+fn runner_for(kind: &str) -> &'static TaskRunner {
+    if ["NO_SUB", "SC", "TC"].contains(&kind) { &ENCODE_RUNNER } else { &MUX_RUNNER }
+}
 struct StartupWindow {
     ready: AtomicBool,
     maximized: bool,
@@ -268,8 +279,8 @@ fn shell_command(command: &str) -> Command {
     builder.arg(&redirected);
     builder
 }
-fn execute(app: &AppHandle, id: &str, command: &str, work_dir: &str, pass: usize, steps: usize) -> bool {
-    if STOP_REQUESTED.load(Ordering::SeqCst) { return false; }
+fn execute(app: &AppHandle, runner: &'static TaskRunner, id: &str, command: &str, work_dir: &str, pass: usize, steps: usize) -> bool {
+    if runner.stop_requested.load(Ordering::SeqCst) { return false; }
     emit(app, "task-output", json!({"id":id,"line": format!("Working Directory: {work_dir}")}));
     if steps > 1 { emit(app, "task-output", json!({"id":id,"line": format!("正在执行 Step {pass}/{steps}: Pass {pass}")})); }
     emit(app, "task-output", json!({"id":id,"line": format!("Executing: {command}")}));
@@ -288,8 +299,8 @@ fn execute(app: &AppHandle, id: &str, command: &str, work_dir: &str, pass: usize
             let _ = read_output(BufReader::new(stderr), |line| emit(&error_app, "task-output", json!({"id":error_id,"line":line})));
         }
     });
-    if let Ok(mut lock) = PROCESS.lock() { *lock = Some(child); }
-    if STOP_REQUESTED.load(Ordering::SeqCst) { stop_task(); }
+    if let Ok(mut lock) = runner.process.lock() { *lock = Some(child); }
+    if runner.stop_requested.load(Ordering::SeqCst) { stop_runner(runner); }
     let duration_re = Regex::new(r"Duration: (\d+:\d+:\d+\.\d+)").expect("duration regex");
     let time_re = Regex::new(r"time=\s*(\d+:\d+:\d+\.\d+)").expect("progress regex");
     let mut duration = None;
@@ -300,19 +311,20 @@ fn execute(app: &AppHandle, id: &str, command: &str, work_dir: &str, pass: usize
             emit(app, "task-output", json!({"id":id,"line": line, "progress": progress, "pass": if steps > 1 { pass } else { 2 }}));
         });
     }
-    let child = PROCESS.lock().ok().and_then(|mut lock| lock.take());
+    let child = runner.process.lock().ok().and_then(|mut lock| lock.take());
     let status = child.and_then(|mut child| child.wait().ok());
     let _ = error_reader.join();
     let success = status.map(|status| status.success()).unwrap_or(false);
-    if !success && !STOP_REQUESTED.load(Ordering::SeqCst) {
+    if !success && !runner.stop_requested.load(Ordering::SeqCst) {
         emit(app, "task-output", json!({"id":id,"line":format!("进程异常退出: {status:?}")}));
     }
-    success && !STOP_REQUESTED.load(Ordering::SeqCst)
+    success && !runner.stop_requested.load(Ordering::SeqCst)
 }
 #[tauri::command]
 fn run_task(app: AppHandle, task: Value) -> Result<String, String> {
-    if RUNNING.load(Ordering::SeqCst) { return Err("已有任务正在运行".into()); }
     let kind = task.get("type").and_then(Value::as_str).unwrap_or("");
+    let runner = runner_for(kind);
+    if runner.running.load(Ordering::SeqCst) { return Err("当前工作区已有任务正在运行".into()); }
     let (commands, work, output, temps) = if ["NO_SUB", "SC", "TC"].contains(&kind) {
         let x = encode_commands(&task)?; (x.0, x.1, Some(x.2), x.3)
     } else {
@@ -320,15 +332,15 @@ fn run_task(app: AppHandle, task: Value) -> Result<String, String> {
     };
     let id = task.get("id").and_then(Value::as_str).unwrap_or("task").to_string();
     let event_id = id.clone();
-    if RUNNING.swap(true, Ordering::SeqCst) { return Err("已有任务正在运行".into()); }
-    STOP_REQUESTED.store(false, Ordering::SeqCst);
+    if runner.running.swap(true, Ordering::SeqCst) { return Err("当前工作区已有任务正在运行".into()); }
+    runner.stop_requested.store(false, Ordering::SeqCst);
     thread::spawn(move || {
         let started = Instant::now();
         let mut success = true;
         let previous_output = output.as_ref().and_then(|path| fs::metadata(path).ok()).map(|meta| (meta.len(), meta.modified().ok()));
-        for (index, command) in commands.iter().enumerate() { if !execute(&app, &event_id, command, &work, index + 1, commands.len()) { success = false; break; } }
+        for (index, command) in commands.iter().enumerate() { if !execute(&app, runner, &event_id, command, &work, index + 1, commands.len()) { success = false; break; } }
         for temp in temps { let _ = fs::remove_file(temp); }
-        let stopped = STOP_REQUESTED.load(Ordering::SeqCst);
+        let stopped = runner.stop_requested.load(Ordering::SeqCst);
         if stopped {
             if let Some(path) = &output {
                 let current = fs::metadata(path).ok().map(|meta| (meta.len(), meta.modified().ok()));
@@ -337,16 +349,16 @@ fn run_task(app: AppHandle, task: Value) -> Result<String, String> {
                 }
             }
         }
-        RUNNING.store(false, Ordering::SeqCst);
+        runner.running.store(false, Ordering::SeqCst);
         emit(&app, "task-finished", json!({"id":event_id,"success": success && !stopped,"stopped":stopped, "output_file": output, "duration": format!("{}s", started.elapsed().as_secs())}));
     });
     Ok(id)
 }
 
-#[tauri::command]
-fn stop_task() -> bool {
-    STOP_REQUESTED.store(true, Ordering::SeqCst);
-    if let Ok(lock) = PROCESS.lock() {
+fn stop_runner(runner: &'static TaskRunner) -> bool {
+    if !runner.running.load(Ordering::SeqCst) { return false; }
+    runner.stop_requested.store(true, Ordering::SeqCst);
+    if let Ok(lock) = runner.process.lock() {
         if let Some(child) = lock.as_ref() {
             let mut command = Command::new("taskkill");
             command.args(["/F", "/T", "/PID", &child.id().to_string()]).stdout(Stdio::null()).stderr(Stdio::null());
@@ -356,7 +368,16 @@ fn stop_task() -> bool {
             return true;
         }
     }
-    RUNNING.load(Ordering::SeqCst)
+    runner.running.load(Ordering::SeqCst)
+}
+
+#[tauri::command]
+fn stop_task(workflow: String) -> bool {
+    match workflow.as_str() {
+        "encode" => stop_runner(&ENCODE_RUNNER),
+        "mux" => stop_runner(&MUX_RUNNER),
+        _ => false,
+    }
 }
 
 #[tauri::command]
@@ -401,10 +422,11 @@ async fn finish_close(app: AppHandle, window: tauri::WebviewWindow, exit: bool) 
     }
     save_state(saved["settings"].clone(), saved["profiles"].clone())?;
     if exit {
-        if RUNNING.load(Ordering::SeqCst) {
-            stop_task();
+        if ENCODE_RUNNER.running.load(Ordering::SeqCst) || MUX_RUNNER.running.load(Ordering::SeqCst) {
+            stop_runner(&ENCODE_RUNNER);
+            stop_runner(&MUX_RUNNER);
             tauri::async_runtime::spawn_blocking(|| {
-                while RUNNING.load(Ordering::SeqCst) { thread::sleep(std::time::Duration::from_millis(25)); }
+                while ENCODE_RUNNER.running.load(Ordering::SeqCst) || MUX_RUNNER.running.load(Ordering::SeqCst) { thread::sleep(std::time::Duration::from_millis(25)); }
             }).await.map_err(|error| error.to_string())?;
         }
         app.exit(0);
@@ -419,7 +441,6 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
-        .manage(PROCESS.clone())
         .setup(|app| {
             let settings = load_state();
             app.manage(StartupWindow {

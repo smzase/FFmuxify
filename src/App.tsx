@@ -27,8 +27,8 @@ export default function App() {
   const startupShown = useRef(false);
   const [profileName, setProfileName] = useState("");
   const [tasks, setTasks] = useState<QueueTask[]>([]);
-  const [queueMode, setQueueMode] = useState<Workflow | null>(null);
-  const [active, setActive] = useState<QueueTask | null>(null);
+  const [queueMode, setQueueMode] = useState<Record<Workflow, boolean>>({ encode: false, mux: false });
+  const [active, setActive] = useState<Record<Workflow, QueueTask | null>>({ encode: null, mux: null });
   const [logs, setLogs] = useState({ encode: [] as string[], mux: [] as string[], subset: [] as string[] });
   const [metrics, setMetrics] = useState(emptyMetrics);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -37,7 +37,7 @@ export default function App() {
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
   const [notice, setNotice] = useState("");
   const stateRef = useRef(state);
-  const activeRef = useRef<QueueTask | null>(null);
+  const activeRef = useRef<Record<Workflow, QueueTask | null>>({ encode: null, mux: null });
   const startedAt = useRef(0);
   const completed = useRef(new Set<string>());
   const closeHandler = useRef<(quit: boolean) => void>(() => {});
@@ -46,7 +46,7 @@ export default function App() {
   const dark = state?.settings.theme_mode === "dark";
   const startupSettled = !!state || !!startupError;
   const profile = state?.profiles[profileName];
-  const running = !!active;
+  const running = !!active[workflow];
   const visibleTasks = tasks.filter(task => workflowOf(task) === workflow);
   const appendLog = (task: QueueTask, line: string) => {
     const key = isEncode(task.type) ? "encode" : task.type === "subset" ? "subset" : "mux";
@@ -107,8 +107,8 @@ export default function App() {
     let disposed = false;
     const subscriptions = [
       api.on<Output>("task-output", output => {
-        const task = activeRef.current;
-        if (!task || task.id !== output.id) return;
+        const task = Object.values(activeRef.current).find(item => item?.id === output.id);
+        if (!task) return;
         // FFmpeg status still drives metrics/progress, but must not flood the log.
         if (!isEncode(task.type) || !/^\s*(?:frame|size)=.*\btime=/.test(output.line)) appendLog(task, output.line);
         if (isEncode(task.type)) {
@@ -121,11 +121,12 @@ export default function App() {
         if (typeof output.progress === "number") setTasks(previous => previous.map(item => item.id === task.id ? { ...item, progress: output.progress!, pass: output.pass ?? item.pass } : item));
       }),
       api.on<Finished>("task-finished", result => {
-        const task = activeRef.current;
-        if (!task || task.id !== result.id) return;
+        const task = Object.values(activeRef.current).find(item => item?.id === result.id);
+        if (!task) return;
+        const mode = workflowOf(task);
         appendLog(task, result.stopped ? "任务已停止" : (result.success ? "完成，用时 " : "失败，用时 ") + result.duration);
         if (result.stopped) {
-          setQueueMode(null);
+          setQueueMode(previous => ({ ...previous, [mode]: false }));
           setTasks(previous => isEncode(task.type) ? previous.filter(item => !isEncode(item.type)) : previous.map(item => item.id === task.id ? { ...item, status: "error" } : item));
         } else setTasks(previous => previous.map(item => item.id === task.id ? { ...item, status: result.success ? "done" : "error", progress: result.success ? 1 : item.progress } : item));
         if (result.success && !task.suffix) {
@@ -144,9 +145,9 @@ export default function App() {
             return { ...previous, profiles: { ...previous.profiles, [task.profileName]: { ...p, ...patch } } };
           });
         }
-        activeRef.current = null;
-        setActive(null);
-        setMetrics(emptyMetrics());
+        activeRef.current[mode] = null;
+        setActive(previous => ({ ...previous, [mode]: null }));
+        if (mode === "encode") setMetrics(emptyMetrics());
       }),
       api.on<{ quit: boolean }>("close-requested", event => closeHandler.current(event.quit)),
     ];
@@ -155,13 +156,13 @@ export default function App() {
     return () => { disposed = true; unlisteners.forEach(unlisten => unlisten()); };
   }, []);
   useEffect(() => {
-    if (!active || !isEncode(active.type)) return;
+    if (!active.encode) return;
     const timer = window.setInterval(() => {
       const seconds = Math.floor((Date.now() - startedAt.current) / 1000);
       setMetrics(previous => ({ ...previous, elapsed: [Math.floor(seconds / 3600), Math.floor(seconds / 60) % 60, seconds % 60].map(part => String(part).padStart(2, "0")).join(":") }));
     }, 1000);
     return () => window.clearInterval(timer);
-  }, [active?.id]);
+  }, [active.encode?.id]);
 
   const updateProfile = (patch: Partial<Profile>) => setState(previous => {
     if (!previous?.profiles[profileName]) return previous;
@@ -183,7 +184,7 @@ export default function App() {
   };
   closeHandler.current = quit => {
     const exit = quit || stateRef.current?.settings.close_behavior === "exit";
-    if (exit && activeRef.current) setConfirmation({ title: "退出程序", description: "任务仍在运行，退出会停止任务并清理未完成的压制文件。", action: "停止并退出", confirm: () => { setConfirmation(null); void closeWindow(true); } });
+    if (exit && Object.values(activeRef.current).some(Boolean)) setConfirmation({ title: "退出程序", description: "任务仍在运行，退出会停止任务并清理未完成的压制文件。", action: "停止并退出", confirm: () => { setConfirmation(null); void closeWindow(true); } });
     else void closeWindow(exit);
   };
   const browse = async (key: keyof Profile, file = false) => {
@@ -208,33 +209,39 @@ export default function App() {
     setTasks(previous => [...previous, ...added]);
   };
   const startTask = (task: QueueTask) => {
-    if (activeRef.current) return;
+    const mode = workflowOf(task);
+    if (activeRef.current[mode]) return;
     const settings = stateRef.current?.settings;
     const launched = { ...task, profile: { ...task.profile, mkvmerge_path: settings?.mkvmerge_path ?? "", assfontsubset_path: settings?.assfontsubset_path ?? "" } };
-    activeRef.current = launched;
-    setActive(launched);
-    startedAt.current = Date.now();
-    setMetrics(emptyMetrics());
+    activeRef.current[mode] = launched;
+    setActive(previous => ({ ...previous, [mode]: launched }));
+    if (mode === "encode") {
+      startedAt.current = Date.now();
+      setMetrics(emptyMetrics());
+    }
     setTasks(previous => previous.map(item => item.id === task.id ? { ...item, status: "running", progress: 0 } : item));
     void api.runTask(launched).catch(error => {
-      if (activeRef.current?.id !== task.id) return;
+      if (activeRef.current[mode]?.id !== task.id) return;
       appendLog(task, "失败：" + String(error));
       setTasks(previous => previous.map(item => item.id === task.id ? { ...item, status: "error" } : item));
-      activeRef.current = null;
-      setActive(null);
+      activeRef.current[mode] = null;
+      setActive(previous => ({ ...previous, [mode]: null }));
     });
   };
   useEffect(() => {
-    if (!queueMode || activeRef.current) return;
-    const next = tasks.find(task => workflowOf(task) === queueMode && task.status === "pending");
-    if (next) startTask(next);
-    else { setQueueMode(null); setNotice("队列中的任务已结束"); }
+    for (const mode of ["encode", "mux"] as const) {
+      if (!queueMode[mode] || activeRef.current[mode]) continue;
+      const next = tasks.find(task => workflowOf(task) === mode && task.status === "pending");
+      if (next) startTask(next);
+      else { setQueueMode(previous => ({ ...previous, [mode]: false })); setNotice("队列中的任务已结束"); }
+    }
   }, [queueMode, active, tasks]);
   const startDirect = (type: QueueTask["type"], ep: string, suffix = "") => {
-    if (activeRef.current) return;
+    const mode = isEncode(type) ? "encode" : "mux";
+    if (activeRef.current[mode]) return;
     const task = makeTask(type, ep, suffix);
     if (!task) return;
-    setQueueMode(null);
+    setQueueMode(previous => ({ ...previous, [mode]: false }));
     setTasks(previous => [...previous, task]);
     startTask(task);
   };
@@ -245,7 +252,7 @@ export default function App() {
     updateProfile({ [kind === "NO_SUB" ? "last_ep_no_sub" : "last_ep"]: nextEpisode(episodes[episodes.length - 1]) });
     setBatchOpen(false);
   };
-  const stop = () => setConfirmation({ title: "强制终止", description: "确定停止当前任务？未完成的压制输出会被清理，压制队列会被清空。", action: "确认终止", confirm: () => { setConfirmation(null); setQueueMode(null); void api.stopTask().catch(error => setNotice(String(error))); } });
+  const stop = () => setConfirmation({ title: "强制终止", description: workflow === "encode" ? "确定停止当前压制任务？未完成的压制输出会被清理，压制队列会被清空。" : "确定停止当前封装任务？", action: "确认终止", confirm: () => { setConfirmation(null); setQueueMode(previous => ({ ...previous, [workflow]: false })); void api.stopTask(workflow).catch(error => setNotice(String(error))); } });
   const remove = (id: string) => setTasks(previous => previous.filter(task => task.id !== id || task.status === "running"));
   const clear = () => { if (!visibleTasks.some(task => task.status === "running")) setTasks(previous => previous.filter(task => workflowOf(task) !== workflow)); };
   const reorder = (from: string, to: string) => setTasks(previous => {
@@ -262,7 +269,7 @@ export default function App() {
       const profiles = Object.fromEntries(Object.entries(state.profiles).map(([key, value]) => [key === target ? name : key, value]));
       setState({ ...state, profiles });
       setTasks(previous => previous.map(task => task.profileName === target ? { ...task, profileName: name } : task));
-      if (activeRef.current?.profileName === target) activeRef.current.profileName = name;
+      for (const task of Object.values(activeRef.current)) if (task?.profileName === target) task.profileName = name;
     }
     setProfileName(name); setNameDialog(null);
   };
@@ -271,7 +278,7 @@ export default function App() {
     if (profileName === name) setProfileName(Object.keys(state?.profiles ?? {}).find(key => key !== name) ?? "");
     setConfirmation(null);
   } });
-  const controls = { start: () => !activeRef.current && setQueueMode(workflow), stop, running, canStart: !running && visibleTasks.some(task => task.status === "pending") };
+  const controls = { start: () => { if (!activeRef.current[workflow]) setQueueMode(previous => ({ ...previous, [workflow]: true })); }, stop, running, canStart: !running && visibleTasks.some(task => task.status === "pending") };
 
   if (!state) return <div className="loading"><div className="flex flex-col items-center gap-3">
     <p role={startupError ? "alert" : "status"}>{startupError || "正在加载配置…"}</p>
