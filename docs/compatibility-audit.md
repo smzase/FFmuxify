@@ -8,7 +8,7 @@ Reference: `auto_encode_fluent.py` and the original encode/mux screenshots suppl
 | --- | --- | --- |
 | Window | Profile panel stays in place; queue and log use remaining height | Fixed viewport shell; 1100 × 800 logical minimum window; only long profile lists, queues, logs, and settings contents scroll |
 | Sidebar | Workflow switch, new profile, profile list, theme and settings | Same order; no branding block, extra page heading, or save controls |
-| Profiles | Immediate edits; right-click rename/delete | Serialized automatic writes; Radix context menu; shadcn-style Radix dialogs with name validation |
+| Profiles | Immediate edits; right-click rename/delete | Serialized automatic writes; pointer/keyboard sorting with a persisted order; new profiles append at the bottom; Radix context menu and shadcn-style dialogs with name validation |
 | Dialogs | Batch popup dismisses outside | Name, batch, settings and confirmation dialogs dismiss outside or on Escape; focus stays inside and returns on close |
 | Settings | Apply/OK commits; Cancel discards pending changes | Local draft; Apply keeps dialog open, OK saves and closes, Cancel/outside/Escape discard unapplied edits |
 | Encode form | Source folder, subtitles folder, output folder, source template, SC/TC rows | Same field order; independent subtitle/no-subtitle folders, matrices, episodes, and suffix values |
@@ -52,6 +52,7 @@ Solid pink primary controls use white text and icons in both themes, including c
 - Tray click/double-click restores the window. Window size, position, and maximization are remembered.
 - The main window starts hidden while its geometry, theme, and React interface initialize. The frontend signals readiness after rendering (with a timer fallback for hidden WebView2 animation frames); only then is the window shown/maximized. Readiness is idempotent, tray/second-instance activation waits for readiness, and a configuration load failure displays a persistent retry screen.
 - A custom configuration location remains discoverable after restarting.
+- Profile order is stored separately from the JSON object map so sorting survives Windows restarts and profile names remain compatible with the original profile file shape.
 
 ## Deliberately preserved source semantics
 

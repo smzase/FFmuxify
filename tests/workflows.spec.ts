@@ -106,6 +106,33 @@ test("profile dialog supports outside close, validation, enter and context actio
   await expect(page.getByRole("button", { name: "示例配置", exact: true })).toHaveAttribute("aria-pressed", "true");
 });
 
+test("profiles support pointer reordering and preserve new items at the bottom", async ({ page }) => {
+  await loaded(page);
+  for (const name of ["第二配置", "第三配置"]) {
+    await page.getByRole("button", { name: "新建配置" }).click();
+    await page.getByRole("textbox", { name: "配置名称" }).fill(name);
+    await page.keyboard.press("Enter");
+  }
+  const profiles = page.locator(".profile");
+  await expect(profiles).toHaveCount(3);
+  await expect(profiles).toHaveText(["示例配置", "第二配置", "第三配置"]);
+  const from = await profiles.first().boundingBox(), to = await profiles.last().boundingBox();
+  await page.mouse.move(from!.x + 90, from!.y + from!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(to!.x + 90, to!.y + to!.height / 2, { steps: 12 });
+  await expect(page.locator(".profile.dragging")).toHaveCount(1);
+  await page.mouse.up();
+  await expect(profiles).toHaveText(["第二配置", "第三配置", "示例配置"]);
+  await page.reload();
+  await expect(page.locator(".profile")).toHaveText(["第二配置", "第三配置", "示例配置"]);
+  await page.getByRole("button", { name: "新建配置" }).click();
+  await page.getByRole("textbox", { name: "配置名称" }).fill("最底部配置");
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".profile").last()).toHaveText("最底部配置");
+  await page.reload();
+  await expect(page.locator(".profile").last()).toHaveText("最底部配置");
+});
+
 test("settings cancel and outside click discard drafts, apply saves", async ({ page }) => {
   await loaded(page);
   await page.getByRole("button", { name: "全局设置" }).click();

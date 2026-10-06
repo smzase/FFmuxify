@@ -1,5 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Moon, Sun, Settings as SettingsIcon, Plus, Pencil, Trash2 } from "lucide-react";
+import { Moon, Sun, Settings as SettingsIcon, Plus, Pencil, Trash2, GripVertical } from "lucide-react";
+import { DndContext, PointerSensor, KeyboardSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
+import { SortableContext, useSortable, sortableKeyboardCoordinates, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { Button } from "./components/ui/button";
 import { Segmented } from "./components/fields";
 import { toast } from "sonner";
@@ -20,6 +23,15 @@ type Confirmation = { title: string; description: string; action: string; confir
 const workflowOf = (task: QueueTask): Workflow => isEncode(task.type) ? "encode" : "mux";
 const nextEpisode = (ep: string) => /^\d+$/.test(ep) ? String(Number(ep) + 1).padStart(ep.length, "0") : ep;
 const historyKey = (name: string, ep: string, type: string) => JSON.stringify([name, ep, type]);
+
+function SortableProfile({ name, active, select, rename, remove }: { name: string; active: boolean; select: () => void; rename: () => void; remove: () => void }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: name, transition: { duration: 180, easing: "ease" } });
+  return <ContextMenu><ContextMenuTrigger asChild>
+    <button ref={setNodeRef} {...attributes} {...listeners} className={"profile " + (active ? "active " : "") + (isDragging ? "dragging" : "")} aria-pressed={active} title={name} onClick={select} style={{ transform: CSS.Transform.toString(transform), transition }}>
+      <GripVertical className="profile-grip" size={14} aria-hidden="true" /><span>{name}</span>
+    </button>
+  </ContextMenuTrigger><ContextMenuContent><ContextMenuItem onSelect={rename}><Pencil size={14} />重命名</ContextMenuItem><ContextMenuItem className="danger" onSelect={remove}><Trash2 size={14} />删除配置</ContextMenuItem></ContextMenuContent></ContextMenu>;
+}
 
 export default function App() {
   const [state, setState] = useState<AppState | null>(null);
@@ -46,6 +58,8 @@ export default function App() {
   const dark = state?.settings.theme_mode === "dark";
   const startupSettled = !!state || !!startupError;
   const profile = state?.profiles[profileName];
+  const profileNames = state ? state.profile_order.filter(name => state.profiles[name]) : [];
+  const profileSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }));
   const running = !!active[workflow];
   const visibleTasks = tasks.filter(task => workflowOf(task) === workflow);
   const appendLog = (task: QueueTask, line: string) => {
@@ -56,7 +70,7 @@ export default function App() {
   useEffect(() => {
     let disposed = false;
     void api.loadState().then(loaded => {
-      if (!disposed) { setState(loaded); setProfileName(Object.keys(loaded.profiles)[0] ?? ""); }
+      if (!disposed) { setState(loaded); setProfileName(loaded.profile_order[0] ?? ""); }
     }).catch(error => { if (!disposed) setStartupError("加载配置失败：" + String(error)); });
     const suppressMenu = (event: MouseEvent) => event.preventDefault();
     document.addEventListener("contextmenu", suppressMenu);
@@ -64,7 +78,7 @@ export default function App() {
   }, []);
   useEffect(() => {
     if (!state) return;
-    void api.saveState(state.settings, state.profiles).catch(error => setNotice("自动保存失败：" + String(error)));
+    void api.saveState(state.settings, state.profiles, state.profile_order).catch(error => setNotice("自动保存失败：" + String(error)));
   }, [state]);
   useLayoutEffect(() => {
     document.documentElement.style.setProperty("--ui-font", fontStack(state?.settings.font_family));
@@ -171,14 +185,14 @@ export default function App() {
   const updateSettings = (patch: Partial<Settings>) => setState(previous => previous && ({ ...previous, settings: { ...previous.settings, ...patch } }));
   const saveSettings = async (settings: Settings) => {
     if (!stateRef.current) return;
-    await api.saveState(settings, stateRef.current.profiles);
+    await api.saveState(settings, stateRef.current.profiles, stateRef.current.profile_order);
     updateSettings(settings);
   };
   const closeWindow = async (quit: boolean) => {
     const current = stateRef.current;
     try {
       if (!current) { await api.finishClose(true); return; }
-      await api.saveState(current.settings, current.profiles); await api.flush(); await api.finishClose(quit);
+      await api.saveState(current.settings, current.profiles, current.profile_order); await api.flush(); await api.finishClose(quit);
     }
     catch (error) { setNotice("关闭前保存失败：" + String(error)); }
   };
@@ -260,22 +274,39 @@ export default function App() {
     if (a < 0 || b < 0 || next[a].status === "running" || next[b].status === "running") return previous;
     const [item] = next.splice(a, 1); next.splice(b, 0, item); return next;
   });
+  const reorderProfiles = ({ active, over }: DragEndEvent) => {
+    if (!over || active.id === over.id) return;
+    setState(previous => {
+      if (!previous) return previous;
+      const next = [...previous.profile_order];
+      const from = next.indexOf(String(active.id)), to = next.indexOf(String(over.id));
+      if (from < 0 || to < 0) return previous;
+      const [item] = next.splice(from, 1); next.splice(to, 0, item);
+      return { ...previous, profile_order: next };
+    });
+  };
   const submitName = (name: string) => {
     if (!state || !nameDialog) return;
     const target = nameDialog.target;
     if (target === null) {
-      setState({ ...state, profiles: { ...state.profiles, [name]: newProfile(state.settings.default_params_matrix) } });
+      setState(previous => previous && { ...previous, profiles: { ...previous.profiles, [name]: newProfile(previous.settings.default_params_matrix) }, profile_order: [...previous.profile_order, name] });
     } else {
       const profiles = Object.fromEntries(Object.entries(state.profiles).map(([key, value]) => [key === target ? name : key, value]));
-      setState({ ...state, profiles });
+      const profile_order = state.profile_order.map(item => item === target ? name : item);
+      setState({ ...state, profiles, profile_order });
       setTasks(previous => previous.map(task => task.profileName === target ? { ...task, profileName: name } : task));
       for (const task of Object.values(activeRef.current)) if (task?.profileName === target) task.profileName = name;
     }
     setProfileName(name); setNameDialog(null);
   };
   const deleteProfile = (name: string) => setConfirmation({ title: "删除配置", description: "确定删除配置「" + name + "」？", action: "删除配置", confirm: () => {
-    setState(previous => { if (!previous) return previous; const profiles = { ...previous.profiles }; delete profiles[name]; return { ...previous, profiles }; });
-    if (profileName === name) setProfileName(Object.keys(state?.profiles ?? {}).find(key => key !== name) ?? "");
+    if (profileName === name) setProfileName(profileNames.find(item => item !== name) ?? "");
+    setState(previous => {
+      if (!previous) return previous;
+      const profiles = { ...previous.profiles }; delete profiles[name];
+      const profile_order = previous.profile_order.filter(item => item !== name);
+      return { ...previous, profiles, profile_order };
+    });
     setConfirmation(null);
   } });
   const controls = { start: () => { if (!activeRef.current[workflow]) setQueueMode(previous => ({ ...previous, [workflow]: true })); }, stop, running, canStart: !running && visibleTasks.some(task => task.status === "pending") };
@@ -288,9 +319,11 @@ export default function App() {
     <aside className="sidebar">
       <div className="workflow-tabs"><Segmented items={["encode", "mux"]} value={workflow} onChange={value => updateSettings({ last_workflow: value as Workflow })} label="工作流程" /></div>
       <Button variant="outline" className="new-profile" onClick={() => setNameDialog({ target: null })}><Plus size={17} />新建配置</Button>
-      <div className="profile-list" aria-label="配置列表">{Object.keys(state.profiles).map(name => <ContextMenu key={name}><ContextMenuTrigger asChild>
-        <button className={name === profileName ? "profile active" : "profile"} aria-pressed={name === profileName} title={name} onClick={() => setProfileName(name)}>{name}</button>
-      </ContextMenuTrigger><ContextMenuContent><ContextMenuItem onSelect={() => setNameDialog({ target: name })}><Pencil size={14} />重命名</ContextMenuItem><ContextMenuItem className="danger" onSelect={() => deleteProfile(name)}><Trash2 size={14} />删除配置</ContextMenuItem></ContextMenuContent></ContextMenu>)}</div>
+      <DndContext sensors={profileSensors} collisionDetection={closestCenter} onDragEnd={reorderProfiles} accessibility={{ screenReaderInstructions: { draggable: "按空格拾起配置，用上下方向键调整位置，再按空格放下；按 Escape 取消。" } }}>
+        <SortableContext items={profileNames} strategy={verticalListSortingStrategy}>
+          <div className="profile-list" aria-label="配置列表">{profileNames.map(name => <SortableProfile key={name} name={name} active={name === profileName} select={() => setProfileName(name)} rename={() => setNameDialog({ target: name })} remove={() => deleteProfile(name)} />)}</div>
+        </SortableContext>
+      </DndContext>
       <div className="sidebar-bottom"><div className="sidebar-actions">
         <Button variant="outline" size="icon" aria-label="切换主题" title="切换深浅色模式" onClick={() => updateSettings({ theme_mode: dark ? "light" : "dark" })}>{dark ? <Sun size={17} /> : <Moon size={17} />}</Button>
         <Button variant="outline" size="icon" aria-label="全局设置" title="全局设置" onClick={() => setSettingsOpen(true)}><SettingsIcon size={17} /></Button>
@@ -302,7 +335,7 @@ export default function App() {
         {workflow === "encode" ? <EncodeLogPanel metrics={metrics} log={logs.encode} clear={() => setLogs(previous => ({ ...previous, encode: [] }))} controls={controls} /> : <MuxLogPanel muxLog={logs.mux} subsetLog={logs.subset} clearMux={() => setLogs(previous => ({ ...previous, mux: [] }))} clearSubset={() => setLogs(previous => ({ ...previous, subset: [] }))} />}
       </div>
     </main>
-    {nameDialog && <NameDialog target={nameDialog.target} names={Object.keys(state.profiles)} close={() => setNameDialog(null)} submit={submitName} />}
+    {nameDialog && <NameDialog target={nameDialog.target} names={profileNames} close={() => setNameDialog(null)} submit={submitName} />}
     {confirmation && <ConfirmDialog {...confirmation} close={() => setConfirmation(null)} />}
     {batchOpen && <BatchDialog close={() => setBatchOpen(false)} submit={batch} />}
     {settingsOpen && <SettingsDialog settings={state.settings} close={() => setSettingsOpen(false)} save={saveSettings} />}

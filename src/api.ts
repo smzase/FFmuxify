@@ -8,23 +8,30 @@ const previewKey = "ffmuxify-preview";
 let saveTail: Promise<unknown> = Promise.resolve();
 let fontsRequest: Promise<SystemFont[]> | undefined;
 let cachedFonts: SystemFont[] | null = null;
+function normalizeProfileOrder(state: Omit<AppState, "profile_order"> & Partial<Pick<AppState, "profile_order">>): AppState {
+  const names = Object.keys(state.profiles ?? {});
+  const seen = new Set<string>();
+  const order = [...(Array.isArray(state.profile_order) ? state.profile_order : []), ...names]
+    .filter(name => names.includes(name) && !seen.has(name) && seen.add(name));
+  return { ...state, profile_order: order } as AppState;
+}
 export const api = {
   loadState: async (): Promise<AppState> => {
-    if (isDesktop()) return invoke("load_state");
+    if (isDesktop()) return normalizeProfileOrder(await invoke<AppState>("load_state"));
     const stored = localStorage.getItem(previewKey);
     if (stored) {
       const loaded = JSON.parse(stored) as AppState;
-      return { ...loaded, settings: { ...defaultSettings(), ...loaded.settings } };
+      return normalizeProfileOrder({ ...loaded, settings: { ...defaultSettings(), ...loaded.settings } });
     }
     const settings = defaultSettings();
     const query = new URLSearchParams(location.search);
     settings.theme_mode = query.get("theme") === "dark" ? "dark" : "light";
     settings.last_workflow = query.get("view") === "mux" ? "mux" : "encode";
-    return { settings, profiles: { "示例配置": newProfile() }, config_dir: "Browser preview" };
+    return { settings, profiles: { "示例配置": newProfile() }, profile_order: ["示例配置"], config_dir: "Browser preview" };
   },
   // Serialize writes so an older edit cannot overwrite a newer one.
-  saveState: (settings: Settings, profiles: Record<string, Profile>): Promise<void> => {
-    const snapshot = structuredClone({ settings, profiles });
+  saveState: (settings: Settings, profiles: Record<string, Profile>, profileOrder = Object.keys(profiles)): Promise<void> => {
+    const snapshot = structuredClone({ settings, profiles, profile_order: profileOrder });
     const operation = saveTail.catch(() => undefined).then(async () => {
       if (isDesktop()) await invoke("save_state", snapshot);
       else localStorage.setItem(previewKey, JSON.stringify({ ...snapshot, config_dir: "Browser preview" }));

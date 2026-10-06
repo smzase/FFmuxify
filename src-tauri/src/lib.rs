@@ -102,6 +102,15 @@ fn startup_dir() -> PathBuf { config_override().unwrap_or_else(|| documents_dir(
 fn config_dir(settings: &Value) -> PathBuf { if let Some(path) = config_override() { return path; } let base = settings.get("base_path").and_then(Value::as_str).filter(|x| !x.is_empty()).map(PathBuf::from).unwrap_or_else(documents_dir); if settings.get("use_sub_folder").and_then(Value::as_bool).unwrap_or(true) { base.join(settings.get("folder_name").and_then(Value::as_str).unwrap_or("ffmpeg smzase")) } else { base } }
 fn read_json(path: &Path, fallback: Value) -> Value { fs::read_to_string(path).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or(fallback) }
 fn merge_defaults(mut defaults: Value, loaded: Value) -> Value { if let (Value::Object(dst), Value::Object(src)) = (&mut defaults, loaded) { for (k,v) in src { dst.insert(k,v); } } defaults }
+fn normalize_profile_order(profiles: &Value, stored: Value) -> Vec<String> {
+    let names = profiles.as_object().map(|items| items.keys().cloned().collect::<Vec<_>>()).unwrap_or_default();
+    let mut seen = std::collections::HashSet::new();
+    let mut order = stored.as_array().into_iter().flatten().filter_map(Value::as_str)
+        .filter(|name| names.iter().any(|item| item == name) && seen.insert((*name).to_string()))
+        .map(str::to_string).collect::<Vec<_>>();
+    for name in names { if seen.insert(name.clone()) { order.push(name); } }
+    order
+}
 
 #[tauri::command]
 fn load_state() -> Value {
@@ -111,21 +120,25 @@ fn load_state() -> Value {
     let dir = config_dir(&settings); let _ = fs::create_dir_all(&dir);
     let settings = merge_defaults(settings, read_json(&dir.join("app_settings.json"), json!({})));
     let profiles = normalize_profiles(read_json(&dir.join("profiles.json"), json!({})));
-    json!({"settings":settings,"profiles":profiles,"config_dir":dir.to_string_lossy()})
+    let order = normalize_profile_order(&profiles, read_json(&dir.join("profile_order.json"), json!([])));
+    json!({"settings":settings,"profiles":profiles,"profile_order":order,"config_dir":dir.to_string_lossy()})
 }
 
 #[tauri::command]
-fn save_state(settings: Value, profiles: Value) -> Result<Value, String> {
+fn save_state(settings: Value, profiles: Value, profile_order: Option<Vec<String>>) -> Result<Value, String> {
     let dir = config_dir(&settings); fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let stored_order = profile_order.map(|items| json!(items)).unwrap_or_else(|| read_json(&dir.join("profile_order.json"), json!([])));
+    let order = normalize_profile_order(&profiles, stored_order);
     fs::write(dir.join("app_settings.json"), serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
     fs::write(dir.join("profiles.json"), serde_json::to_string_pretty(&profiles).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+    fs::write(dir.join("profile_order.json"), serde_json::to_string_pretty(&order).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
     // Keep the startup locator in the legacy default directory when storage moves.
     let initial = startup_dir();
     if initial != dir {
         fs::create_dir_all(&initial).map_err(|e| e.to_string())?;
         fs::write(initial.join("app_settings.json"), serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
     }
-    Ok(json!({"settings":settings,"profiles":profiles,"config_dir":dir.to_string_lossy()}))
+    Ok(json!({"settings":settings,"profiles":profiles,"profile_order":order,"config_dir":dir.to_string_lossy()}))
 }
 
 #[tauri::command]
@@ -420,7 +433,8 @@ async fn finish_close(app: AppHandle, window: tauri::WebviewWindow, exit: bool) 
             saved["settings"]["window_geometry"] = json!([position.x, position.y, size.width, size.height]);
         }
     }
-    save_state(saved["settings"].clone(), saved["profiles"].clone())?;
+    let order = saved["profile_order"].as_array().map(|items| items.iter().filter_map(Value::as_str).map(str::to_string).collect::<Vec<_>>());
+    save_state(saved["settings"].clone(), saved["profiles"].clone(), order)?;
     if exit {
         if ENCODE_RUNNER.running.load(Ordering::SeqCst) || MUX_RUNNER.running.load(Ordering::SeqCst) {
             stop_runner(&ENCODE_RUNNER);

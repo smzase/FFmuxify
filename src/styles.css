@@ -52,10 +52,14 @@ button { cursor: pointer; }
 .workflow-tabs .segmented { width: 100%; }
 .new-profile { width: 100%; flex-shrink: 0; margin-bottom: 9px; }
 .profile-list { flex: 1; min-height: 0; overflow-x: hidden; overflow-y: auto; display: flex; flex-direction: column; gap: 3px; }
-.profile { position: relative; flex-shrink: 0; width: 100%; min-height: 36px; padding: 8px 14px; border: 0; border-radius: 5px; text-align: left; background: transparent; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.profile { position: relative; display: flex; align-items: center; gap: 6px; flex-shrink: 0; width: 100%; min-height: 36px; padding: 8px 10px 8px 7px; border: 0; border-radius: 5px; text-align: left; background: transparent; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; touch-action: none; }
+.profile > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.profile-grip { flex-shrink: 0; color: rgb(var(--muted-foreground)); opacity: .55; transition: opacity 150ms, color 150ms; }
+.profile:hover .profile-grip, .profile:focus-visible .profile-grip { opacity: 1; color: var(--text); }
 .profile:hover { background: var(--surface-muted); }
 .profile.active { background: var(--pink-soft); }
 .profile.active::before { content: ""; position: absolute; left: 0; top: 10px; bottom: 10px; width: 3px; border-radius: 3px; background: var(--pink); }
+.profile.dragging { z-index: 1; background: var(--surface); box-shadow: 0 5px 16px #0002; }
 .sidebar-bottom { flex-shrink: 0; padding-top: 10px; }
 .sidebar-actions { display: flex; gap: 6px; }
 .main-content { display: flex; flex-direction: column; gap: 10px; min-width: 0; min-height: 0; overflow: hidden; }
